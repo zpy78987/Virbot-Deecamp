@@ -10,16 +10,10 @@ from data.output_handel import output_handle
 # import tensorflow.compat.v1 as tf
 # tf.disable_v2_behavior()
 import tensorflow as tf
-import numpy.linalg as npl
 
 class DMAN(NN):
     def __init__(self, config):
         super(DMAN, self).__init__(config)
-        self.seqlen = 12
-        self.block_len = 6
-        self.block_num = 5
-        self.history_num = 25
-        self.all_block_len = self.block_len*self.block_num
         self.test_loss = [9999] * 20
         if config != None:
             self.edim = config['edim']
@@ -43,7 +37,7 @@ class DMAN(NN):
     def set_placeholder(self):
         self.inputs = tf.placeholder(
             tf.float32,
-            [None, None, self.all_block_len, self.edim],  # [batch_sie, sequence_len, 15, 29]
+            [None, None, 15, self.edim],  # [batch_sie, sequence_len, 15, 29]
             name="inputs"
         )
 
@@ -56,10 +50,8 @@ class DMAN(NN):
         shape = tf.shape(self.inputs)
         batch_size = shape[0]
         sequence_len = shape[1]
-        print('label3')
-        print(shape)
         
-        self.reshape_inputs = tf.reshape(self.inputs, [batch_size, sequence_len, -1, self.block_len, self.edim]) # [batch_sie, sequence_len, 5, 3, edim]
+        self.reshape_inputs = tf.reshape(self.inputs, [batch_size, sequence_len, -1, 3, self.edim]) # [batch_sie, sequence_len, 5, 3, edim]
 
         return self.reshape_inputs, self.labels
 
@@ -75,8 +67,6 @@ class DMAN(NN):
             inputs = tf.reshape(inputs, [num1*num2*num3, -1, 29])
             lstm_output, _ = lstm_layer(inputs, 64, num1*num2*num3)
             lstm_output = tf.reshape(lstm_output, [num1, num2, num3, -1, 64])
-            lstm_output = lstm_output[:,:,:,-1,:]  #bs*seq*5*64
-            lstm_output = tf.expand_dims(lstm_output,axis=3)
 
         return lstm_output          # outputs: [batch_sie, sequence_len, 5, 3, 64]
     
@@ -163,11 +153,8 @@ class DMAN(NN):
         model_output = self.mlp_layer(lstm_layer3_output)
         self.model_output = model_output
 
-        print('flag5')
-        print(self.model_output.get_shape(),labels.get_shape())
-
-        self.rse = tf.norm(self.model_output - labels)/tf.norm(labels)
-        self.loss = tf.losses.mean_squared_error(self.model_output , labels)
+        self.l2loss = tf.norm(self.model_output - labels)/tf.norm(labels)
+        self.loss = self.l2loss
 
         # ====== build your own model ======
 
@@ -179,13 +166,10 @@ class DMAN(NN):
 
     def train(self, sess, train_data, test_data, saver):
 
-        # aa = np.append(np.zeros([1,17,29]),np.zeros([1,13,29]),axis=1)
-
         # 分割数据
-        bt = batcher(train_data, batch_size=self.batch_size,seq_len=self.seqlen,all_block_len=self.all_block_len,history_num = self.history_num)
+        bt = batcher(train_data, self.batch_size)
         print("-------------begin train------------------")
         min_loss = 9999
-        cnt = 0
         for t_round in range(self.epoch):
             loss = []
             while(1):
@@ -193,111 +177,80 @@ class DMAN(NN):
                     break
                 
                 batch_input, batch_label = bt.next_batch()      # [batch_size, dequnce_len, 29]
-                
-                # print('flag2')
-                # print(np.shape(batch_input))
-                # print(np.shape(batch_label))
-
-                batch_input = input_prepare(batch_input, self.all_block_len)    # [batch_size, sequence_len,15, 29]
-                
-                # print('flag2.1')
-                # print(np.shape(batch_input))
-                # print(np.shape(batch_label))
-
+                batch_input = input_prepare(batch_input, 15)    # [batch_size, sequence_len,15, 29]
                 feed_dict = {
                     self.inputs: batch_input,
                     self.labels: batch_label
                 }
-
-                # print('flag4')
-                # print(np.shape(batch_label))
-                # # print(batch_input)
-                # tmpp=tf.shape(self.labels)
-                # print(self.labels.get_shape())
-                # print(tmpp[0],tmpp[1],tmpp[2])
-                # batch_input = np.array(batch_input)
-                # print(type(batch_input),type(batch_label))
-                # # print(batch_input)
-                crt_loss, rse, optimize = sess.run([self.loss, self.rse, self.optimize], feed_dict=feed_dict)
+                crt_loss, optimize = sess.run([self.loss, self.optimize], feed_dict=feed_dict)
                 loss.append(crt_loss)
                 # print(lstm.shape)
 
             mean_loss = np.mean(loss)
-            rse = np.mean(rse)
-            print("\nEpoch{}\ttain-l2loss: {:.6f}, rse: {:.6f}".format(t_round, mean_loss, rse))
+            print("\nEpoch{}\ttain-loss: {:.6f}".format(t_round, mean_loss))
             if min_loss > mean_loss:
                 min_loss = mean_loss
                 self.save_model(sess, self.model_save_path, self.model_name, saver)
             print("testing....")
-            if t_round%20==0:
-                self.test(sess, test_data, saver)
-            cnt += 1
+            self.test(sess, test_data, saver)
 
+        # 未分割数据 [1, 3600, 29] 搭建模型时 可以用这个 速度较快
+        # data_inputs = train_data.inputs
+        # data_labels = train_data.labels
+        # min_loss = 9999
+        # for t_round in range(self.epoch):
+        #     loss = []
+        #     for i in range(len(data_inputs)):
+        #         batch_input = np.expand_dims(data_inputs[i], 0)
+        #         batch_label = np.expand_dims(data_labels[i], 0)
+        #         feed_dict = {
+        #             self.inputs: batch_input,
+        #             self.labels: batch_label
+        #         }
+        #         crt_loss, optimize = sess.run([self.loss, self.optimize], feed_dict=feed_dict)
+        #         loss.append(crt_loss)
+
+        #     mean_loss = np.mean(loss)
+        #     print("\nEpoch{}\ttain-loss: {:.6f}".format(t_round, mean_loss))
+        #     if min_loss > mean_loss:
+        #         min_loss = mean_loss
+        #         self.save_model(sess, self.model_save_path, self.model_name, saver)
+        #     print("testing....")
+        #     self.test(sess, test_data, saver)
 
     def test(self, sess, test_data, saver):
         data_inputs = test_data.inputs
         data_labels = test_data.labels
         data_names = test_data.names
 
-        # print('falg10: ',data_labels)
-        if data_labels==0:
-            # print('flag11')
-            sh = np.shape(data_inputs)
-            data_labels = np.zeros([sh[0],sh[1],30])
-            # print(np.shape(data_labels))
-
+        loss = []
         for i in range(len(data_inputs)):
             sequence_len = len(data_inputs[i])
-            batch_input = np.expand_dims(data_inputs[i], 0)     # [1, sequence_len(3600), 29]
+            batch_input = np.expand_dims(data_inputs[i], 0)     # [batch_size(1), sequence_len(3600), 29]
             batch_label = np.expand_dims(data_labels[i], 0)
             name = data_names[i]
 
-            print('flag8.1',np.array(batch_input).shape)
-
-            batch_input = np.concatenate((np.zeros([1,self.history_num,29]),batch_input,np.zeros([1,self.all_block_len-self.history_num-1,29])),axis=1)
-            sequence_len = sequence_len
-
-            inputs = [input_prepare(batch_input[:, j:j+self.seqlen+self.all_block_len-1, :], self.all_block_len)[0] for j in range(sequence_len-self.seqlen+1)]  # [3571, 30, 15, 29]
-            labels = [batch_label[:, j:j+self.seqlen, :][0] for j in range(sequence_len-self.seqlen+1)] # [3571, 30, 30]
-            print(np.array(batch_input).shape)
-            print(np.array(inputs).shape)
-            print(np.array(labels).shape)
-            feed_dict = {
-                self.inputs: inputs,                   # [3571, 30, 15, 29]
-                self.labels: labels                   # [3571, 30, 30]
-            }
-            fm_y = sess.run([self.model_output], feed_dict=feed_dict)   # [1, 3571, 30, 30]
-            fm_y = output_handle(fm_y[0])
-            los = npl.norm(fm_y-data_labels[i])/npl.norm(data_labels[i])
-            print("test {}-loss: {:.6f}".format(name, los))
-            super(DMAN, self).save_fmy(sess, self.fmy_output_path, fm_y, name, self.gpu_num, self.model_name)
-
-
-    def testonly(self, sess, test_data, saver):
-        data_inputs = test_data.inputs
-        data_names = test_data.names
-
-        for i in range(len(data_inputs)):
-            sequence_len = len(data_inputs[i])
-            batch_input = np.expand_dims(data_inputs[i], 0)     # [1, sequence_len(3600), 29]
-            name = data_names[i]
-
-            print('flag8.1',np.array(batch_input).shape)
-
-            batch_input = np.concatenate((np.zeros([1,self.history_num,29]),batch_input,np.zeros([1,self.all_block_len-self.history_num-1,29])),axis=1)
-            sequence_len = sequence_len
-
-            inputs = [input_prepare(batch_input[:, j:j+self.seqlen+self.all_block_len-1, :], self.all_block_len)[0] for j in range(sequence_len-self.seqlen+1)]  # [3571, 30, 15, 29]
-            
-            print(np.array(batch_input).shape)
-            print(np.array(inputs).shape)
-            feed_dict = {
-                self.inputs: inputs#,                   # [3571, 30, 15, 29]
-                #self.labels: labels                   # [3571, 30, 30]
-            }
-            fm_y = sess.run([self.model_output], feed_dict=feed_dict)   # [1, 3571, 30, 30]
-            fm_y = output_handle(fm_y[0])
-            # los = npl.norm(fm_y-data_labels[i])/npl.norm(data_labels[i])
-            print("test {}-loss: {:.6f}".format(name, -1.0))
-            super(DMAN, self).save_fmy(sess, self.fmy_output_path, fm_y, name, self.gpu_num, self.model_name)
-
+            split_loss = []
+            split_fm_y = []
+            for j in range(sequence_len-29):
+                split_input = batch_input[:, j:j+30, :]         # [batch_size(1), 30, 29]
+                split_label = batch_label[:, j:j+30, :]         # [batch_size(1), 30, 30]
+                split_input = input_prepare(split_input, 15)    # [batch_size(1), 30, 15, 29]
+                
+                feed_dict = {
+                    self.inputs: split_input,                   # [batch_size(1), 30, 29]
+                    self.labels: split_label                    # [batch_size(1), 30, 30]
+                }
+                crt_loss, fm_y = sess.run([self.loss, self.model_output], feed_dict=feed_dict)
+                split_loss.append(crt_loss)
+                split_fm_y.append(fm_y[0])                      # split_fm_y: [3571, 30, 30]    
+            mean_loss = np.mean(split_loss)
+            if mean_loss < self.test_loss[i]:
+                self.test_loss[i] = mean_loss
+                print("test {}-loss: {:.6f}".format(name, mean_loss))
+                print("saving fm_y...")
+                fm_y = output_handle(split_fm_y)
+                super(DMAN, self).save_fmy(sess, self.fmy_output_path, fm_y, name, self.gpu_num, self.model_name)
+                print("saving fm_y success...")
+            loss.append(mean_loss)
+        print("test-loss: {:.6f}".format(np.mean(loss)))
