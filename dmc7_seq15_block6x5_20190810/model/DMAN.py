@@ -13,7 +13,7 @@ import tensorflow as tf
 import numpy.linalg as npl
 
 class DMAN(NN):
-    def __init__(self, config):
+    def __init__(self, config):    #定义超参数，从配置文件调入其他参数
         super(DMAN, self).__init__(config)
         self.seqlen = 12
         self.block_len = 6
@@ -40,7 +40,7 @@ class DMAN(NN):
             self.gpu_num = None
             self.model_name = None
 
-    def set_placeholder(self):
+    def set_placeholder(self):  #定义网络输入和输出的形状格式
         self.inputs = tf.placeholder(
             tf.float32,
             [None, None, self.all_block_len, self.edim],  # [batch_sie, sequence_len, 15, 29]
@@ -63,7 +63,7 @@ class DMAN(NN):
 
         return self.reshape_inputs, self.labels
 
-    def lstm_layer1(self, inputs):
+    def lstm_layer1(self, inputs):    #定义底层LSTM(下采样层），return_sequence = ?
         """
         input: [batch_sie, sequence_len, 5, 3, 29]
         output: [batch_sie, sequence_len, 5, 3, 64]
@@ -80,7 +80,7 @@ class DMAN(NN):
 
         return lstm_output          # outputs: [batch_sie, sequence_len, 5, 3, 64]
     
-    def attn_layer1(self, inputs):
+    def attn_layer1(self, inputs):  #定义底层attention，对三帧的特征进行归纳。
         """
         input: [batch_sie, sequence_len, 5, 3, 64]
         output: [batch_sie, sequence_len, 5, 64]
@@ -95,7 +95,7 @@ class DMAN(NN):
             
         return output
 
-    def lstm_layer2(self, inputs):
+    def lstm_layer2(self, inputs):     #语义层
         """
         input: [batch_sie, sequence_len, 5, 64]
         ouput: [batch_sie, sequence_len, 5, 128]
@@ -126,7 +126,7 @@ class DMAN(NN):
 
         return output
 
-    def lstm_layer3(self, inputs):
+    def lstm_layer3(self, inputs): # 字与字层面的连接
         """
         input: [batch_sie, sequence_len, 256]
         output: [batch_sie, sequence_len, 256]
@@ -139,7 +139,7 @@ class DMAN(NN):
 
         return lstm_output
     
-    def mlp_layer(self, inputs):
+    def mlp_layer(self, inputs):      #（sequence loss层）
         """
         input: [batch_sie, sequence_len, 256]
         output: [batch_sie, sequence_len, 30]
@@ -177,7 +177,7 @@ class DMAN(NN):
             self.loss, self.params)
 
 
-    def train(self, sess, train_data, test_data, saver):
+    def train(self, sess, train_data, test_data, saver):   #训练过程就是减少loss，更新网络的权重
 
         # aa = np.append(np.zeros([1,17,29]),np.zeros([1,13,29]),axis=1)
 
@@ -234,7 +234,7 @@ class DMAN(NN):
             cnt += 1
 
 
-    def test(self, sess, test_data, saver):
+    def test(self, sess, test_data, saver):     # fm_y = sess.run([self.model_output], feed_dict=feed_dict) 就是model.predict，其他是评估 
         data_inputs = test_data.inputs
         data_labels = test_data.labels
         data_names = test_data.names
@@ -273,7 +273,7 @@ class DMAN(NN):
             super(DMAN, self).save_fmy(sess, self.fmy_output_path, fm_y, name, self.gpu_num, self.model_name)
 
 
-    def testonly(self, sess, test_data, saver):
+    def testonly(self, sess, test_data, saver):   #只predict，不评估
         data_inputs = test_data.inputs
         data_names = test_data.names
 
